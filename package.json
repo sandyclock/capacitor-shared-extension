@@ -24,7 +24,7 @@
     "dist/",
     "ios/",
     "android/",
-    "CapacitorShareExtension.podspec"
+    "CapacitorSharedExtension.podspec"
   ],
   "keywords": [
     "capacitor",
