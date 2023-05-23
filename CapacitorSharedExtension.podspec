@@ -1,6 +1,6 @@
 
   Pod::Spec.new do |s|
-    s.name = 'CapacitorShareExtension'
+    s.name = 'CapacitorSharedExtension'
     s.version = '0.0.1'
     s.summary = 'Capacitor share extension for iOS and Android'
     s.license = 'MIT'
