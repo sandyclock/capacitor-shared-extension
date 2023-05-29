@@ -259,6 +259,7 @@ class ShareItem {
     public var type: String?
     public var url: String?
     public var webPath: String?
+    public var qrStrings: String? //[String]?
 }
 
 class ShareViewController:  UIViewController {
@@ -318,10 +319,13 @@ class ShareViewController:  UIViewController {
                     value: $0.url?.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? ""),
                 URLQueryItem(
                     name: "webPath",
-                    value: $0.webPath?.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? "")
+                    value: $0.webPath?.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? ""),
+                URLQueryItem(
+                    name: "qrStrings",
+                    value: $0.qrStrings?.description.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? "")
             ]
         }.flatMap({ $0 })
-        var urlComps = URLComponents(string: "restvo://;")!
+        var urlComps = URLComponents(string: "secucredclient://;")!
         urlComps.queryItems = queryItems
         openURL(urlComps.url!)
     }
@@ -330,7 +334,7 @@ class ShareViewController:  UIViewController {
         let fileManager = FileManager.default
         print("share url: " + url!.absoluteString)
         let copyFileUrl =
-        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.restvo.test")!
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.secucred.user.shareextension")!
             .absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)! + url!
             .lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
         try? Data(contentsOf: url!).write(to: URL(string: copyFileUrl)!)
@@ -342,7 +346,7 @@ class ShareViewController:  UIViewController {
         let fileManager = FileManager.default
         
         let copyFileUrl =
-        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.restvo.test")!
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.secucred.user.shareextension")!
             .absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
         + "/screenshot.png"
         do {
@@ -371,6 +375,15 @@ class ShareViewController:  UIViewController {
             shareItem.url = url!.absoluteString
             shareItem.webPath = url!.absoluteString
             shareItem.type = "text/plain"
+        
+            do {
+                let _coding = try await attachment.loadPreviewImage();
+                if let image = _coding as? UIImage {
+                    self.processQR(image: image, shareItem: shareItem)
+                }
+            }
+            catch {
+            }
         }
         return shareItem
     }
@@ -410,17 +423,48 @@ class ShareViewController:  UIViewController {
             shareItem.type = "image/png"
             shareItem.url = self.saveScreenshot(image)
             shareItem.webPath = "capacitor://localhost/_capacitor_file_" + URL(string: shareItem.url ?? "")!.path
+            self.processQR(image: image, shareItem: shareItem)
         case let url as URL:
             shareItem.title = url.lastPathComponent
             shareItem.type = "image/" + url.pathExtension.lowercased()
             shareItem.url = self.createSharedFileUrl(url)
             shareItem.webPath = "capacitor://localhost/_capacitor_file_" + URL(string: shareItem.url ?? "")!.path
+            if let ciImage = CIImage(contentsOf: url) {
+                self.processQR(image: ciImage, shareItem: shareItem)
+            }
         default:
             print("Unexpected image data:", type(of: data))
         }
         return shareItem
     }
     
+    private func processQR( image: UIImage, shareItem: ShareItem){
+        let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [ CIDetectorAccuracy : CIDetectorAccuracyHigh ])
+        if let _cgImage = image.cgImage {
+            self.processQR(image: CIImage(cgImage: _cgImage), shareItem: shareItem);
+            
+        }
+
+    }
+
+    private func processQR( image: CIImage, shareItem: ShareItem){
+            let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [ CIDetectorAccuracy : CIDetectorAccuracyHigh ])
+            let features = detector?.features(in: image)
+            if let _features = features as? [CIQRCodeFeature] {
+                var _qrStrings: [String]=[]
+                if (!_features.isEmpty){
+                    for _feature in _features {
+                        if let _messageString = _feature.messageString {
+                            _qrStrings.append("\""+_messageString+"\"");
+                        }
+                    }
+                }
+                if (_qrStrings.count>0){
+                    shareItem.qrStrings = "["+_qrStrings.joined(separator: ",")+"]";
+                }
+            };
+    }
+
     @objc func openURL(_ url: URL) -> Bool {
         var responder: UIResponder? = self
         while responder != nil {
@@ -432,6 +476,7 @@ class ShareViewController:  UIViewController {
         return false
     }
 }
+
 
 ```
 
@@ -470,7 +515,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let types = params.filter { $0.name == "type" }
         let urls = params.filter { $0.name == "url" }
         let webPaths = params.filter { $0.name == "webPath" }
-    
+        let qrStrings = params.filter { $0.name == "qrStrings" }
+
         store.shareItems.removeAll()
     
         if (titles.count > 0){
@@ -481,6 +527,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 shareItem["type"] = types[index].value!
                 shareItem["url"] = urls[index].value!
                 shareItem["webPath"] = webPaths[index].value!
+                shareItem["qrStrings"] = qrStrings[index].value!
                 store.shareItems.append(shareItem)
             }
         }
