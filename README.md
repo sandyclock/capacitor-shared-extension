@@ -259,7 +259,7 @@ class ShareItem {
     public var type: String?
     public var url: String?
     public var webPath: String?
-    public var qrStrings: String? //[String]?
+    public var qrStrings: String?
 }
 
 class ShareViewController:  UIViewController {
@@ -325,7 +325,7 @@ class ShareViewController:  UIViewController {
                     value: $0.qrStrings?.description.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? "")
             ]
         }.flatMap({ $0 })
-        var urlComps = URLComponents(string: "secucredclient://;")!
+        var urlComps = URLComponents(string: "restvo://;")!
         urlComps.queryItems = queryItems
         openURL(urlComps.url!)
     }
@@ -334,7 +334,7 @@ class ShareViewController:  UIViewController {
         let fileManager = FileManager.default
         print("share url: " + url!.absoluteString)
         let copyFileUrl =
-        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.secucred.user.shareextension")!
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.restvo.test")!
             .absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)! + url!
             .lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
         try? Data(contentsOf: url!).write(to: URL(string: copyFileUrl)!)
@@ -346,7 +346,7 @@ class ShareViewController:  UIViewController {
         let fileManager = FileManager.default
         
         let copyFileUrl =
-        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.secucred.user.shareextension")!
+        fileManager.containerURL(forSecurityApplicationGroupIdentifier: "group.com.restvo.test")!
             .absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
         + "/screenshot.png"
         do {
@@ -476,7 +476,6 @@ class ShareViewController:  UIViewController {
         return false
     }
 }
-
 
 ```
 
