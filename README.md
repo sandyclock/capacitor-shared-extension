@@ -498,45 +498,71 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     let store = ShareStore.store
     // ...
 
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
-            
-        var success = true
-        if CAPBridge.handleOpenUrl(url, options) {
-            success = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
-        }
-    
-        guard let components = NSURLComponents(url: url, resolvingAgainstBaseURL: true),
-              let params = components.queryItems else {
-                  return false
-              }
-        let titles = params.filter { $0.name == "title" }
-        let descriptions = params.filter { $0.name == "description" }
-        let types = params.filter { $0.name == "type" }
-        let urls = params.filter { $0.name == "url" }
-        let webPaths = params.filter { $0.name == "webPath" }
-        let qrStrings = params.filter { $0.name == "qrStrings" }
-
-        store.shareItems.removeAll()
-    
-        if (titles.count > 0){
-            for index in 0...titles.count-1 {
-                var shareItem: JSObject = JSObject()
-                shareItem["title"] = titles[index].value!
-                shareItem["description"] = descriptions[index].value!
-                shareItem["type"] = types[index].value!
-                shareItem["url"] = urls[index].value!
-                shareItem["webPath"] = webPaths[index].value!
-                shareItem["qrStrings"] = qrStrings[index].value!
-                store.shareItems.append(shareItem)
+    private func parseAndPopulateJSONString(shareItem: inout JSObject, name: String, items: [URLQueryItem], index: Int){
+        if let _value = items[index].value {
+            if !_value.isEmpty {
+                shareItem[name]=_value.removingPercentEncoding;
             }
         }
-    
-        store.processed = false
-        let nc = NotificationCenter.default
-        nc.post(name: Notification.Name("triggerSendIntent"), object: nil )
-    
-        return success
     }
+
+    private func parseAndPopulateJSONArray(shareItem: inout JSObject, name: String, items: [URLQueryItem], index: Int){
+        if let _value = items[index].value {
+            if !_value.isEmpty {
+                if let _percentage_removed = _value.removingPercentEncoding {
+                    let data = Data(_percentage_removed.utf8);
+                    do {
+                        if let _json_array = try JSONSerialization.jsonObject(with: data, options: []) as? [String] {
+                            shareItem[name] = _json_array;
+                        }
+                    } catch  {
+                        print("ERROR: parsing json: \(error)");
+                    }
+                }
+            }
+        }
+    }
+
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+                
+            var success = true
+            if CAPBridge.handleOpenUrl(url, options) {
+                success = ApplicationDelegateProxy.shared.application(app, open: url, options: options)
+            }
+        
+            guard let components = NSURLComponents(url: url, resolvingAgainstBaseURL: true),
+                  let params = components.queryItems else {
+                      return false
+                  }
+            let titles = params.filter { $0.name == "title" }
+            let descriptions = params.filter { $0.name == "description" }
+            let types = params.filter { $0.name == "type" }
+            let urls = params.filter { $0.name == "url" }
+            let webPaths = params.filter { $0.name == "webPath" }
+            let qrStrings = params.filter { $0.name == "qrStrings" }
+
+            store.shareItems.removeAll()
+        
+            if (titles.count > 0){
+                for index in 0...titles.count-1 {
+                    var shareItem: JSObject = JSObject()
+                    self.parseAndPopulateJSONString(shareItem: &shareItem, name: "title", items: titles, index: index);
+                    self.parseAndPopulateJSONString(shareItem: &shareItem, name: "description", items: descriptions, index: index);
+                    self.parseAndPopulateJSONString(shareItem: &shareItem, name: "type", items: types, index: index);
+                    self.parseAndPopulateJSONString(shareItem: &shareItem, name: "url", items: urls, index: index);
+                    self.parseAndPopulateJSONString(shareItem: &shareItem, name: "webPath", items: webPaths, index: index);
+                    self.parseAndPopulateJSONArray(shareItem: &shareItem, name: "qrStrings", items: qrStrings, index: index);
+
+                    store.shareItems.append(shareItem)
+                }
+            }
+        
+            store.processed = false
+            let nc = NotificationCenter.default
+            nc.post(name: Notification.Name("triggerSendIntent"), object: nil )
+        
+            return success
+        }
     // ...
 }
 ```
