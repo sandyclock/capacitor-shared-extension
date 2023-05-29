@@ -12,6 +12,7 @@ import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.util.SparseArray;
+import android.view.View;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -97,7 +98,7 @@ public class ShareExtension extends Plugin {
             intent.getBundleExtra(Intent.EXTRA_STREAM);
           }
 
-          Uri screenshotUri =null;
+      Uri screenshotUri = null;
           for (String key : KEY_BROWSER_SCREENSHOT) {
             screenshotUri = intent.getParcelableExtra(key);
             if (screenshotUri != null) {
@@ -105,12 +106,19 @@ public class ShareExtension extends Plugin {
             }
           }
 
-           if (screenshotUri!=null){
+
+      if (screenshotUri != null) {
              Log.d("Decode QR", "found screenshot");
              ShareExtension.decodeQR(ret, activity, screenshotUri);
+      } else {
+        View view = getActivity().getWindow().findViewById((android.R.id.content));
+        if (view != null) {
+          Log.d("Decode QR", "Found view (info)");
+
+          ShareExtension.decodeQR(ret, activity, view);
+        } else {
+          Log.d("Decode QR", "Does NOT found view (info)");
            }
-           else {
-             Log.d("Decode QR", "Does NOT found screenshot (info)");
 
            }
         }
@@ -180,11 +188,28 @@ public class ShareExtension extends Plugin {
     _decodeQR(json, activity, imageUri, bitmapResover);
   }
 
+  protected static void decodeQR(JSONObject json, final Activity activity, View view) {
+//    View view = bridge.getWebView().findViewById(android.R.id.content);
+    Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
+    _decodeQR(json, activity, bitmap);
+  }
+
+
   protected static void _decodeQR(JSONObject json, final Activity activity, Uri imageUri, BitmapResolver bitmapResolver) {
     Context context = activity.getApplicationContext();
     try {
-      json.put("processed", true);
       Bitmap bitmap = bitmapResolver.start(activity.getContentResolver(), imageUri);
+      _decodeQR(json, activity, bitmap);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+  }
+
+  protected static void _decodeQR(JSONObject json, final Activity activity, Bitmap bitmap) {
+    Context context = activity.getApplicationContext();
+    try {
+      json.put("processed", true);
       BarcodeDetector detector =
         new BarcodeDetector.Builder(context)
           .setBarcodeFormats(Barcode.DATA_MATRIX | Barcode.QR_CODE)
@@ -205,7 +230,7 @@ public class ShareExtension extends Plugin {
         Log.d("QR_VALUE", "--" + thisCode.rawValue);
         barcodeArray.put(thisCode.rawValue);
       }
-      
+
       json.put("qrStrings", barcodeArray);
 
       if (barcodes.size() == 0) {
@@ -220,10 +245,8 @@ public class ShareExtension extends Plugin {
         }
       }
 
-    } catch (IOException | JSONException e) {
+    } catch (JSONException e) {
       e.printStackTrace();
     }
-
   }
-
 }
