@@ -19,11 +19,7 @@ apply plugin: 'com.android.library'
 
 android {
     namespace "com.capacitor.shareextension.plugin.capacitorshareextension"
-<<<<<<<< HEAD:android/capacitor-shared-extension/build.gradle
-    compileSdkVersion rootProject.ext.compileSdkVersion
-========
     compileSdkVersion project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 33
->>>>>>>> upstream/master:android/build.gradle
         defaultConfig {
             minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 22
             targetSdkVersion project.hasProperty('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 33
