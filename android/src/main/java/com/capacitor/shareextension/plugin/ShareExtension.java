@@ -1,11 +1,18 @@
 package com.capacitor.shareextension.plugin;
 
+import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Bundle;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.util.Log;
+import android.util.SparseArray;
+import android.view.View;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -15,7 +22,14 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import com.getcapacitor.FileUtils;
+import com.google.android.gms.vision.Frame;
+import com.google.android.gms.vision.barcode.Barcode;
+import com.google.android.gms.vision.barcode.BarcodeDetector;
+
 import org.apache.commons.io.IOUtils;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -32,18 +46,19 @@ public class ShareExtension extends Plugin {
     @PluginMethod
     public void checkSendIntentReceived(PluginCall call) {
         Intent intent = bridge.getActivity().getIntent();
+        Activity activity = bridge.getActivity();
         String action = intent.getAction();
         String type = intent.getType();
         List payload = new ArrayList<JSObject>();
         JSObject ret = new JSObject();
         //Log.v("SHARE", "Intent received, " + type);
         if (Intent.ACTION_SEND.equals(action) && type != null) {
-            payload.add(readItemAt(intent, type, 0));
+            payload.add(readItemAt(activity, intent, type, 0));
             ret.put("payload", new JSArray(payload));
             call.resolve(ret);
         } else if (Intent.ACTION_SEND_MULTIPLE.equals(action) && type != null) {
             for (int index = 0; index < intent.getClipData().getItemCount(); index++) {
-                payload.add(readItemAt(intent, type, index));
+                payload.add(readItemAt(activity, intent, type, index));
             }
             ret.put("payload", new JSArray(payload));
             call.resolve(ret);
@@ -61,7 +76,11 @@ public class ShareExtension extends Plugin {
         call.resolve(ret);
     }
 
-    private JSObject readItemAt(Intent intent, String type, int index) {
+  private static final String[] KEY_BROWSER_SCREENSHOT = {"share_screenshot_as_stream",
+    "share_full_screen", "file", Intent.EXTRA_STREAM};
+
+
+  private JSObject readItemAt(Activity activity, Intent intent, String type, int index) {
         JSObject ret = new JSObject();
         String title = intent.getStringExtra(Intent.EXTRA_SUBJECT);
         Uri uri = null;
@@ -74,6 +93,34 @@ public class ShareExtension extends Plugin {
         //Handling web links as url
         if ("text/plain".equals(type) && intent.getStringExtra(Intent.EXTRA_TEXT) != null) {
             url = intent.getStringExtra(Intent.EXTRA_TEXT);
+            Bundle extras = intent.getExtras();
+          if (extras != null) {
+            intent.getBundleExtra(Intent.EXTRA_STREAM);
+          }
+
+      Uri screenshotUri = null;
+          for (String key : KEY_BROWSER_SCREENSHOT) {
+            screenshotUri = intent.getParcelableExtra(key);
+            if (screenshotUri != null) {
+              break;
+            }
+          }
+
+
+      if (screenshotUri != null) {
+             Log.d("Decode QR", "found screenshot");
+             ShareExtension.decodeQR(ret, activity, screenshotUri);
+      } else {
+        View view = getActivity().getWindow().findViewById((android.R.id.content));
+        if (view != null) {
+          Log.d("Decode QR", "Found view (info)");
+
+          ShareExtension.decodeQR(ret, activity, view);
+        } else {
+          Log.d("Decode QR", "Does NOT found view (info)");
+           }
+
+           }
         }
         //Handling files as url
         else if (uri != null) {
@@ -87,6 +134,13 @@ public class ShareExtension extends Plugin {
         String webPath = "";
         if (!("text/plain".equals(type))) {
             webPath = FileUtils.getPortablePath(getContext(), bridge.getLocalUrl(), copyfileUri);
+        }
+
+        if (type.startsWith("image/")) {
+          Uri imageUri = (Uri) intent.getParcelableExtra(Intent.EXTRA_STREAM);
+          if (imageUri != null) {
+            ShareExtension.decodeQR(ret, activity, imageUri);
+          }
         }
 
         ret.put("title", title);
@@ -124,4 +178,75 @@ public class ShareExtension extends Plugin {
         }
         return null;
     }
+
+  interface BitmapResolver {
+    Bitmap start(ContentResolver resolver, Uri uri) throws IOException;
+  }
+
+  protected static void decodeQR(JSONObject json, final Activity activity, Uri imageUri) {
+    BitmapResolver bitmapResover = MediaStore.Images.Media::getBitmap;
+    _decodeQR(json, activity, imageUri, bitmapResover);
+  }
+
+  protected static void decodeQR(JSONObject json, final Activity activity, View view) {
+//    View view = bridge.getWebView().findViewById(android.R.id.content);
+    Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.ARGB_8888);
+    _decodeQR(json, activity, bitmap);
+  }
+
+
+  protected static void _decodeQR(JSONObject json, final Activity activity, Uri imageUri, BitmapResolver bitmapResolver) {
+    Context context = activity.getApplicationContext();
+    try {
+      Bitmap bitmap = bitmapResolver.start(activity.getContentResolver(), imageUri);
+      _decodeQR(json, activity, bitmap);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+  }
+
+  protected static void _decodeQR(JSONObject json, final Activity activity, Bitmap bitmap) {
+    Context context = activity.getApplicationContext();
+    try {
+      json.put("processed", true);
+      BarcodeDetector detector =
+        new BarcodeDetector.Builder(context)
+          .setBarcodeFormats(Barcode.DATA_MATRIX | Barcode.QR_CODE)
+          .build();
+      if (!detector.isOperational()) {
+        Log.d("QR_READ", "Could not set up the detector!");
+      }
+      Frame frame = new Frame.Builder().setBitmap(bitmap).build();
+      SparseArray<Barcode> barcodes = detector.detect(frame);
+      Log.d("QR_READ", "-barcodeLength-" + barcodes.size());
+      Barcode thisCode = null;
+      if (barcodes.size() == 0) {
+        return;
+      }
+      JSONArray barcodeArray = new JSONArray();
+      for (int iter = 0; iter < barcodes.size(); iter++) {
+        thisCode = barcodes.valueAt(iter);
+        Log.d("QR_VALUE", "--" + thisCode.rawValue);
+        barcodeArray.put(thisCode.rawValue);
+      }
+
+      json.put("qrStrings", barcodeArray);
+
+      if (barcodes.size() == 0) {
+        Log.d("QR_VALUE", "--NODATA");
+      } else if (barcodes.size() == 1) {
+        thisCode = barcodes.valueAt(0);
+        Log.d("QR_VALUE", "--" + thisCode.rawValue);
+      } else {
+        for (int iter = 0; iter < barcodes.size(); iter++) {
+          thisCode = barcodes.valueAt(iter);
+          Log.d("QR_VALUE", "--" + thisCode.rawValue);
+        }
+      }
+
+    } catch (JSONException e) {
+      e.printStackTrace();
+    }
+  }
 }
